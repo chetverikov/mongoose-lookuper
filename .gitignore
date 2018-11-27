@@ -1,0 +1,19 @@
+node_modules/
+.DS_Store
+coverage
+npm-debug.log
+package-lock.json
+
+# Idea
+# =========
+/.idea
+
+# Visual Studio
+# =========
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+
+# Visual Studio Code
+.vscode
