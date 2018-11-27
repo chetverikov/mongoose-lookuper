@@ -17,9 +17,7 @@ class Generator {
 
     if (references) {
       for (const reference of references) {
-        let referenceName = typeof reference === 'string' ? reference : reference.modelName;
-        let referenceIsArray = false;
-        let referenceIsArray = false;
+        let referenceName = getReferenceName(reference);
         const referenceField = `${referenceName}Reference`;
 
         switch (true) {
@@ -118,5 +116,51 @@ class Generator {
     this.modelNames = [];
   }
 }
+
+/**
+ * Return schema for reference
+ *
+ * @param {String|String[]|Object|Object[]} reference Data for create a reference schema
+ */
+function getReferenceSchema(reference) {
+  if (Array.isArray(reference)) {
+    return;
+  }
+
+  if (typeof reference === 'string' || reference.modelName) {
+    const referenceName = getReferenceName(reference);
+    const referenceField = `${referenceName}Reference`;
+
+    return {
+      [referenceField]: {
+        type: ObjectId,
+        ref: referenceName
+      }
+    }
+  }
+
+  if (isPlainObject(reference) && Object.keys(reference).length) {
+    const keys = Object.keys(reference);
+
+    for (const key of keys) {
+      const embedded = getReferenceSchema(reference[key]);
+      const referenceName = getReferenceName(reference);
+      const referenceField = `${referenceName}Reference`;
+
+      return {
+        [key]: embedded
+      }
+    }
+  }
+}
+
+function getReferenceName(v) {
+  return typeof v === 'string' ? v : v.modelName
+}
+
+function isPlainObject(o) {
+  return Boolean(o) && typeof o === 'object' && Object.prototype.toString.call(o) === '[object Object]';
+}
+
 
 module.exports = Generator;
