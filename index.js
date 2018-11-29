@@ -94,7 +94,6 @@ class Lookuper {
       const referenceCollectionName = referenceModel.collection.collectionName;
 
       return {
-        isArray: false,
         referencePath: referencePath.join('.'),
         referenceCollectionName,
         referenceModel

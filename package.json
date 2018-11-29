@@ -25,6 +25,8 @@
     "mongoose": "^5.3.13"
   },
   "devDependencies": {
-    "faker": "^4.1.0"
+    "faker": "^4.1.0",
+    "lodash.get": "^4.4.2",
+    "mocha": "^5.2.0"
   }
 }
