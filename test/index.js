@@ -206,15 +206,75 @@ describe('Lookuper', function() {
         }
       });
 
+      it('should return pipeline for array path with embedded docs 2', async () => {
+        const LevelOne = generator.generateModel('LevelOne',
+          {
+            levelTwo: {em: [
+              {someField: generator.generateModel('LevelTwo')}
+            ]}
+          }
+        );
+
+        await generator.generateDocument(LevelOne);
+
+        const lookuper = new Lookuper(LevelOne);
+        const pipeline = lookuper.lookup('levelTwo.em.someField');
+
+        const lookupedDocs = await LevelOne
+          .aggregate()
+          .match({})
+          .append(pipeline)
+          .exec();
+
+        assert.equal(lookupedDocs.length, 1);
+        assert.equal(lookupedDocs[0].levelTwo.em.length, 1);
+
+        for (const embedded of lookupedDocs[0].levelTwo.em) {
+          assert.equal(typeof embedded.someField, 'object');
+          assert.ok(embedded.someField._id);
+        }
+      });
+
       it('should return pipeline for array path with ObjectIDs', async () => {
         const LevelOne = generator.generateModel('LevelOneWithArray', {
-          levelTwo: [generator.generateModel('LevelTwo')]
+          levelTwo: [
+            generator.generateModel('LevelTwo')
+          ]
         });
 
         await generator.generateDocument(LevelOne);
 
         const lookuper = new Lookuper(LevelOne);
         const pipeline = lookuper.lookup('levelTwo');
+
+        const lookupedDocs = await LevelOne
+          .aggregate()
+          .match({})
+          .append(pipeline)
+          .exec();
+
+        assert.equal(lookupedDocs.length, 1);
+        assert.equal(lookupedDocs[0].levelTwo.length, 1);
+
+        for (const embedded of lookupedDocs[0].levelTwo) {
+          assert.equal(typeof embedded, 'object');
+          assert.ok(embedded._id);
+        }
+      });
+
+      it.skip('should return pipeline for array path with ObjectIDs and additional reference', async () => {
+        const LevelOne = generator.generateModel('LevelOne', {
+          levelTwo: [
+            generator.generateModel('LevelTwo',
+              generator.generateModel('LevelThree')
+            )
+          ]
+        });
+
+        await generator.generateDocument(LevelOne);
+
+        const lookuper = new Lookuper(LevelOne);
+        const pipeline = lookuper.lookup('levelTwo.LevelThreeReference');
 
         const lookupedDocs = await LevelOne
           .aggregate()

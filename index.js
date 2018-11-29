@@ -39,8 +39,8 @@ class Lookuper {
    * @param {Model|Schema} modelOrSchema Current model or schema
    * @param {Object} [options] Options for lookuper's instance
    * @param {String} [options.foreignField] Value of field from pipeline lookup (https://docs.mongodb.com/manual/reference/operator/aggregation/lookup/)
-   * @param {Boolean} [options.preserveNullAndEmptyArrays] Unwind pipline field (https://docs.mongodb.com/manual/reference/operator/aggregation/unwind/)
-   * @param {String} [options.referencePathPrefix] Option use then need to loolup field in already lookup field
+   * @param {Boolean} [options.preserveNullAndEmptyArrays] Unwind pipeline field (https://docs.mongodb.com/manual/reference/operator/aggregation/unwind/)
+   * @param {String} [options.referencePathPrefix] Option use then need to lookup field in already lookup field
    */
   constructor(modelOrSchema, options) {
     this._schema = modelOrSchema.schema ? modelOrSchema.schema : modelOrSchema;
@@ -48,6 +48,7 @@ class Lookuper {
       foreignField: '_id',
       preserveNullAndEmptyArrays: true,
       referencePathPrefix: '',
+      parentArrayReference: '',
       excludePaths: []
     };
 
@@ -138,9 +139,7 @@ class Lookuper {
    */
   lookup(path) {
     if (Array.isArray(path)) {
-      return path.reduce((pipeline, path) => {
-        return pipeline.concat(this.lookup(path));
-      }, []);
+      return path.reduce((pipeline, path) => pipeline.concat(this.lookup(path)), []);
     }
 
     const nearestReference = this.getNearestReference(path);
@@ -187,9 +186,9 @@ class Lookuper {
                       '$$this',
                       {
                         [referenceField]: {
-                          "$arrayElemAt": [
+                          '$arrayElemAt': [
                             `$tmp_${pipelinePath}`,
-                            {"$indexOfArray": [`$tmp_${pipelinePath}._id`, `$$this.${referenceField}`]}
+                            {$indexOfArray: [`$tmp_${pipelinePath}._id`, `$$this.${referenceField}`]}
                           ]
                         }
                       }
@@ -199,6 +198,7 @@ class Lookuper {
               }
             }
           });
+          pipelines.push({$addFields: {[`$tmp_${pipelinePath}`]: '$$REMOVE'}});
         }
       }
     }
