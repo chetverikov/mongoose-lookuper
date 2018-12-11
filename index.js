@@ -1,14 +1,20 @@
 const mongoose = require('mongoose');
+const defaultOptions = {
+  foreignField: '_id',
+  preserveNullAndEmptyArrays: true,
+  referencePathPrefix: '',
+  parentArrayReference: '',
+  excludePaths: []
+};
 
 /**
  * Lookuper
  *
- * Class generation pipeline for deep lookup by passed path(s)
+ * Lookuper generate pipeline for deep lookup by passed path(s)
  *
  * Example:
  *
- *   const lookuper = new Lookuper(MyModel)
- *   const pipeline = lookuper.lookup('field.innerReference.fieldOfRef.secInnerRef.foo.bar');
+ *   const pipeline = lookuper.getPipeline('field.innerReference.fieldOfRef.secInnerRef.foo.bar');
  *
  *   myAggregateQueryCursor.append(pipeline);
  *   myAggregateQueryCursor.exec();
@@ -31,212 +37,284 @@ const mongoose = require('mongoose');
  *   }
  *
  */
-class Lookuper {
 
-  /**
-   * Constructor
-   *
-   * @param {Model|Schema} modelOrSchema Current model or schema
-   * @param {Object} [options] Options for lookuper's instance
-   * @param {String} [options.foreignField] Value of field from pipeline lookup (https://docs.mongodb.com/manual/reference/operator/aggregation/lookup/)
-   * @param {Boolean} [options.preserveNullAndEmptyArrays] Unwind pipeline field (https://docs.mongodb.com/manual/reference/operator/aggregation/unwind/)
-   * @param {String} [options.referencePathPrefix] Option use then need to lookup field in already lookup field
-   */
-  constructor(modelOrSchema, options) {
-    this._schema = modelOrSchema.schema ? modelOrSchema.schema : modelOrSchema;
-    this._options = {
-      foreignField: '_id',
-      preserveNullAndEmptyArrays: true,
-      referencePathPrefix: '',
-      parentArrayReference: '',
-      excludePaths: []
-    };
 
-    if (typeof options === 'object' && options !== null) {
-      Object.assign(this._options, options);
-    }
+/**
+ * Return data of a nearest reference descriptor by passed path
+ *
+ * @param {Schema|Model} model Model or Schema
+ * @param {String} path Path will be searched for reference
+ *
+ * @return {{referencePath: String, referenceCollectionName: String, referenceModel: Model}} Nearest reference descriptor
+ */
+function getNearestReferenceData(model, path) {
+  const schema = getSchema(model);
+  const parts = path.split('.');
 
+  let schemaType = schema.path(path);
+  let referencePath = [];
+
+  if (parts.length === 0 || (parts.length === 1 && isUnnecessaryPath(schemaType))) {
+    return null;
   }
 
-  /**
-   * Return a nearest reference descriptor by passed path
-   *
-   * @param {String} path Path will be searched for reference
-   * @return {{referencePath: String, referenceCollectionName: String, referenceModel: Model}} Nearest reference descriptor
-   */
-  getNearestReference(path) {
-    const parts = path.split('.');
-    let pathDescriptor = this._schema.path(path);
-    let referencePath = [];
+  if (schemaType) {
+    referencePath = parts;
+  }
 
-    if (parts.length === 0 || (parts.length === 1 && isUnnecessaryPath(pathDescriptor))) {
-      return null;
+  while (isUnnecessaryPath(schemaType) && parts.length > 0) {
+    referencePath.push(parts.shift());
+    schemaType = schema.path(referencePath.join('.'));
+
+    if (isArrayPath(schemaType)) {
+      break;
     }
+  }
 
-    if (pathDescriptor) {
-      referencePath = parts;
-    }
+  if (!schemaType) {
+    return null;
+  }
 
-    while (isUnnecessaryPath(pathDescriptor) && parts.length > 0) {
-      referencePath.push(parts.shift());
-      pathDescriptor = this._schema.path(referencePath.join('.'));
+  if (isReferencePath(schemaType)) {
+    const referenceModel = mongoose.model(schemaType.options.ref);
+    const referenceCollectionName = referenceModel.collection.collectionName;
 
-      if (isArrayPath(pathDescriptor)) {
-        break;
-      }
-    }
+    return {
+      referencePath: referencePath.join('.'),
+      referenceCollectionName,
+      referenceModel
+    };
+  }
 
-    if (!pathDescriptor) {
-      return null;
-    }
+  if (isArrayPath(schemaType)) {
+    let data = {};
 
-    if (pathDescriptor.options.ref) {
-      const referenceModel = mongoose.model(pathDescriptor.options.ref);
+    if (isArrayOfDocumentsPath(schemaType)) {
+      Object.assign(data, getNearestReferenceData(schemaType.schema, parts.join('.')));
+
+      data.isArray = true;
+      data.isArrayOfDocuments = true;
+      data.arrayField = referencePath.join('.');
+      data.referenceField = data.referencePath;
+      data.referencePath = [...referencePath, data.referencePath].join('.');
+    } else {
+      const referenceModel = mongoose.model(schemaType.caster.options.ref);
       const referenceCollectionName = referenceModel.collection.collectionName;
 
-      return {
-        referencePath: referencePath.join('.'),
-        referenceCollectionName,
-        referenceModel
-      };
+      data.isArray = true;
+      data.referencePath = referencePath.join('.');
+      data.referenceCollectionName = referenceCollectionName;
+      data.referenceModel = referenceModel;
     }
 
-    if (isArrayPath(pathDescriptor)) {
-      let data = {
-        isArray: true
-      };
-
-      if (isArrayOfDocumentsPath(pathDescriptor)) {
-        const lookuper = new Lookuper(pathDescriptor.schema, {
-          referencePathPrefix: referencePath.join('.')
-        });
-
-        data = {...data, ...lookuper.getNearestReference(parts.join('.'))};
-        data.isArrayOfDocuments = true;
-        data.field = referencePath.join('.');
-        data.referenceField = data.referencePath;
-        data.referencePath = [referencePath, data.referencePath].join('.');
-      } else {
-        const referenceModel = mongoose.model(pathDescriptor.caster.options.ref);
-        const referenceCollectionName = referenceModel.collection.collectionName;
-
-        data.referencePath = referencePath.join('.');
-        data.referenceCollectionName = referenceCollectionName;
-        data.referenceModel = referenceModel;
-      }
-
-      return data;
-    }
+    return data;
   }
+}
 
-  /**
-   * Lookup
-   *
-   * This method exec "$lookup" pipeline for any fields that are reference in the given path.
-   *
-   * @param {String|String[]} path The path for which you want to perform "$lookup" (ex. catalog.author.name)
-   * @return {Array} Pipeline for inject into your Aggregate Query
-   */
-  lookup(path) {
-    if (Array.isArray(path)) {
-      return path.reduce((pipeline, path) => pipeline.concat(this.lookup(path)), []);
-    }
+/**
+ * Return pipeline
+ *
+ * This method generate pipeline with $lookup for any fields that are reference in the given path.
+ *
+ * @param {Schema|Model} model Model or Schema
+ * @param {String|String[]} path The path for which you want to perform "$lookup" (ex. catalog.author.name)
+ * @param {Object} [options] Options for lookuper's instance
+ * @param {String} [options.foreignField] Value of field from pipeline lookup (https://docs.mongodb.com/manual/reference/operator/aggregation/lookup/)
+ * @param {Boolean} [options.preserveNullAndEmptyArrays] Unwind pipeline field (https://docs.mongodb.com/manual/reference/operator/aggregation/unwind/)
+ * @param {String} [options.referencePathPrefix] Option use then need to lookup field in already lookup field
+ * @param {String[]} [options.excludePaths] Exclude paths
+ * @param {Boolean} [options.parentArrayReference] When parent path is array
+ *
+ * @return {Array} Pipeline for inject into your Aggregate Query
+ */
+function getPipeline(model, path, options = {}) {
+  options = {...defaultOptions, ...options};
 
-    const nearestReference = this.getNearestReference(path);
-    let pipelines = [];
+  if (Array.isArray(path)) {
+    const pipeline = [];
+    const excludePaths = [...(options.excludePaths || [])];
 
-    if (!nearestReference) {
-      return pipelines;
-    }
-
-    const pipelinePath = `${this._options.referencePathPrefix}${nearestReference.referencePath}`;
-
-    if (!this._options.excludePaths.includes(pipelinePath)) {
-      pipelines = [
-        {
-          $lookup: {
-            from: nearestReference.referenceCollectionName,
-            localField: pipelinePath,
-            foreignField: this._options.foreignField,
-            as: nearestReference.isArrayOfDocuments ? `tmp_${pipelinePath}` : pipelinePath
-          }
-        }
-      ];
-
-      if (!nearestReference.isArray) {
-        pipelines.push(
-          {
-            $unwind: {
-              path: `$${pipelinePath}`,
-              preserveNullAndEmptyArrays: this._options.preserveNullAndEmptyArrays
-            }
-          }
-        );
-      } else {
-        if (nearestReference.isArrayOfDocuments) {
-          const {field, referenceField} = nearestReference;
-
-          pipelines.push({
-            $addFields: {
-              [field]: {
-                $map: {
-                  input: `$${field}`,
-                  in: {
-                    $mergeObjects: [
-                      '$$this',
-                      {
-                        [referenceField]: {
-                          '$arrayElemAt': [
-                            `$tmp_${pipelinePath}`,
-                            {$indexOfArray: [`$tmp_${pipelinePath}._id`, `$$this.${referenceField}`]}
-                          ]
-                        }
-                      }
-                    ]
-                  }
-                }
-              }
-            }
-          });
-          pipelines.push({$addFields: {[`$tmp_${pipelinePath}`]: '$$REMOVE'}});
-        }
-      }
-    }
-
-    if (path !== nearestReference.referencePath) {
-      const prefix = `${this._options.referencePathPrefix}${nearestReference.referencePath}.`;
-      const exclude = [...this._options.excludePaths, pipelinePath];
-      const deepPath = path.replace(`${nearestReference.referencePath}.`, '');
-      const lookuper = new Lookuper(nearestReference.referenceModel, {
-        referencePathPrefix: prefix,
-        excludePaths: exclude
+    for (const tmp of path) {
+      const result = getPipeline(model, tmp, {
+        ...options,
+        excludePaths
       });
 
-      pipelines = pipelines.concat(lookuper.lookup(deepPath));
-
-      this._options.excludePaths = this._options.excludePaths.concat(lookuper._options.excludePaths);
+      excludePaths.push(...getExcludePathsFromPipeline(result));
+      pipeline.push(...result);
     }
 
-    this._options.excludePaths.push(pipelinePath);
+    return pipeline;
+  }
 
+  const schema = getSchema(model);
+  const nearestReference = getNearestReferenceData(schema, path);
+  const excludePaths = [...(options.excludePaths || [])];
+  const pipelines = [];
+
+  if (!nearestReference) {
     return pipelines;
+  }
+
+  const pipelinePath = `${options.referencePathPrefix}${nearestReference.referencePath}`;
+
+  if (options.parentArrayReference) {
+    nearestReference.isArray = true;
+    nearestReference.isArrayOfDocuments = true;
+    nearestReference.arrayField = options.parentArrayReference;
+    nearestReference.referenceField = nearestReference.referencePath;
+  }
+
+  if (!excludePaths.includes(pipelinePath)) {
+    const fieldFoundDocs = nearestReference.isArrayOfDocuments ? `tmp_${pipelinePath}` : pipelinePath;
+
+    pipelines.push(
+      {
+        $lookup: {
+          from: nearestReference.referenceCollectionName,
+          localField: pipelinePath,
+          foreignField: options.foreignField,
+          as: fieldFoundDocs
+        }
+      }
+    );
+
+    excludePaths.push(pipelinePath);
+
+    if (!nearestReference.isArray) {
+      pipelines.push(getUnwindStage(pipelinePath, options.preserveNullAndEmptyArrays));
+    } else {
+      if (nearestReference.isArrayOfDocuments) {
+        const {arrayField} = nearestReference;
+        const referenceField = pipelinePath.replace(`${arrayField}.`, '');
+
+        pipelines.push(getAddFieldsStage(arrayField, referenceField, fieldFoundDocs));
+        pipelines.push({$addFields: {[`tmp_${arrayField}`]: '$$REMOVE'}});
+      }
+    }
+  }
+
+  if (path !== nearestReference.referencePath) {
+    const parentArrayReference = nearestReference.isArray && !options.parentArrayReference ?
+      nearestReference.referencePath
+      :
+      options.parentArrayReference;
+    const deepPath = path.replace(`${nearestReference.referencePath}.`, '');
+    const pipeline = getPipeline(nearestReference.referenceModel, deepPath, {
+      referencePathPrefix: `${options.referencePathPrefix}${nearestReference.referencePath}.`,
+      excludePaths: [...excludePaths, pipelinePath],
+      parentArrayReference
+    });
+
+    pipelines.push(...pipeline);
+  }
+
+  return pipelines;
+}
+
+/**
+ * Return $unwind stage
+ *
+ * @param {String} path Unwind path
+ * @param {Boolean} [preserveNullAndEmptyArrays] https://docs.mongodb.com/manual/reference/operator/aggregation/unwind/
+ *
+ * @returns {{$unwind: {path: string, preserveNullAndEmptyArrays: boolean}}}
+ */
+function getUnwindStage(path, preserveNullAndEmptyArrays) {
+  return {
+    $unwind: {
+      path: `$${path}`,
+      preserveNullAndEmptyArrays
+    }
+  };
+}
+
+/**
+ * Return $addField stage
+ *
+ * @param {String} baseField Base field
+ * @param {String} referenceField The field that will be filled
+ * @param {String} fieldFoundDocs The field that contain found document
+ *
+ * @returns {{$addFields: {}}}
+ */
+function getAddFieldsStage(baseField, referenceField, fieldFoundDocs) {
+  const mergeObject = {};
+  const arrayElemAt = {
+    '$arrayElemAt': [
+      `$${fieldFoundDocs}`,
+      {$indexOfArray: [`$${fieldFoundDocs}._id`, `$$this.${referenceField}`]}
+    ]
+  };
+
+  if (referenceField.includes('.')) {
+    const parts = referenceField.split('.');
+    let lastObject = mergeObject;
+
+    while (parts.length > 1) {
+      const part = parts.shift();
+
+      lastObject[part] = {};
+      lastObject = lastObject[part];
+    }
+
+    referenceField = parts.shift();
+    lastObject[referenceField] = arrayElemAt;
+  } else {
+    mergeObject[referenceField] = arrayElemAt;
+  }
+
+  return {
+    $addFields: {
+      [baseField]: {
+        $map: {
+          input: `$${baseField}`,
+          in: {
+            $mergeObjects: ['$$this', mergeObject]
+          }
+        }
+      }
+    }
   }
 }
 
-function isUnnecessaryPath(pathDescriptor) {
-  return !isObjectIdPath(pathDescriptor) && !isArrayPath(pathDescriptor);
+function getExcludePathsFromPipeline(pipeline) {
+  const excludePaths = [];
+
+  for (const stage of pipeline) {
+    if (stage && stage.$lookup) {
+      excludePaths.push(stage.$lookup.localField);
+    }
+  }
+
+  return excludePaths;
 }
 
-function isObjectIdPath(pathDescriptor) {
-  return pathDescriptor && pathDescriptor.instance === 'ObjectID';
+function getSchema(modelOrSchema) {
+  return modelOrSchema.schema ? modelOrSchema.schema : modelOrSchema;
 }
 
-function isArrayPath(pathDescriptor) {
-  return pathDescriptor && pathDescriptor.instance === 'Array';
+function isUnnecessaryPath(schemaType) {
+  return !isObjectIdPath(schemaType) && !isArrayPath(schemaType);
 }
 
-function isArrayOfDocumentsPath(pathDescriptor) {
-  return isArrayPath(pathDescriptor) && pathDescriptor.schema;
+function isObjectIdPath(schemaType) {
+  return schemaType && schemaType.instance === 'ObjectID';
 }
 
-module.exports = Lookuper;
+function isArrayPath(schemaType) {
+  return schemaType && (schemaType.$isMongooseArray || isArrayOfDocumentsPath(schemaType));
+}
+
+function isArrayOfDocumentsPath(schemaType) {
+  return schemaType && schemaType.$isMongooseDocumentArray;
+}
+
+function isReferencePath(schemaType) {
+  return schemaType && schemaType.options && schemaType.options.ref
+}
+
+module.exports = {
+  getNearestReferenceData,
+  getPipeline
+};

@@ -2,7 +2,7 @@ const assert = require('assert');
 const mongoose = require('mongoose');
 const get = require('lodash.get');
 const Generator = require('./Generator');
-const Lookuper = require('../');
+const lookuper = require('../');
 
 const {Schema} = mongoose;
 const {ObjectId} = Schema.Types;
@@ -18,7 +18,7 @@ describe('Lookuper', function() {
 
   afterEach(() => generator.clear());
 
-  describe('#lookup', () => {
+  describe('#getPipeline', () => {
     it('should return pipeline for a passed path when path is two level reference', async () => {
       const LevelOne = generator.generateModel('LevelOne',
         generator.generateModel('LevelTwo')
@@ -26,8 +26,7 @@ describe('Lookuper', function() {
 
       await generator.generateDocument(LevelOne);
 
-      const lookuper = new Lookuper(LevelOne);
-      const pipeline = lookuper.lookup('LevelTwoReference');
+      const pipeline = lookuper.getPipeline(LevelOne, 'LevelTwoReference');
 
       const result = await LevelOne
         .aggregate()
@@ -47,8 +46,7 @@ describe('Lookuper', function() {
 
       await generator.generateDocument(LevelOne);
 
-      const lookuper = new Lookuper(LevelOne);
-      const pipeline = lookuper.lookup('LevelTwoReference.LevelThreeReference');
+      const pipeline = lookuper.getPipeline(LevelOne, 'LevelTwoReference.LevelThreeReference');
 
       const result = await LevelOne
         .aggregate()
@@ -70,8 +68,7 @@ describe('Lookuper', function() {
 
       await generator.generateDocument(LevelOne);
 
-      const lookuper = new Lookuper(LevelOne);
-      const pipeline = lookuper.lookup('LevelTwoReference.LevelThreeReference.LevelFourReference');
+      const pipeline = lookuper.getPipeline(LevelOne, 'LevelTwoReference.LevelThreeReference.LevelFourReference');
 
       const result = await LevelOne
         .aggregate()
@@ -95,8 +92,7 @@ describe('Lookuper', function() {
 
       await generator.generateDocument(LevelOne);
 
-      const lookuper = new Lookuper(LevelOne);
-      const pipeline = lookuper.lookup('LevelTwoReference.LevelThreeReference.LevelFourReference.LevelFiveReference');
+      const pipeline = lookuper.getPipeline(LevelOne, 'LevelTwoReference.LevelThreeReference.LevelFourReference.LevelFiveReference');
 
       const result = await LevelOne
         .aggregate()
@@ -127,8 +123,7 @@ describe('Lookuper', function() {
 
       await generator.generateDocument(LevelOne);
 
-      const lookuper = new Lookuper(LevelOne);
-      const pipeline = lookuper.lookup([
+      const pipeline = lookuper.getPipeline(LevelOne, [
         'ThreadOneLevelTwoReference.ThreadOneLevelThreeReference.ThreadOneLevelFourReference.ThreadOneLevelFiveReference',
         'ThreadTwoLevelTwoReference.ThreadTwoLevelThreeReference.ThreadTwoLevelFourReference.ThreadTwoLevelFiveReference'
       ]);
@@ -151,8 +146,7 @@ describe('Lookuper', function() {
         )
       );
 
-      const lookuper = new Lookuper(LevelOne);
-      const pipeline = lookuper.lookup([
+      const pipeline = lookuper.getPipeline(LevelOne, [
         'ThreadOneLevelTwoReference.ThreadOneLevelThreeReference',
         'ThreadOneLevelTwoReference',
         'ThreadOneLevelTwoReference.ThreadOneLevelThreeReference',
@@ -167,9 +161,7 @@ describe('Lookuper', function() {
 
     it('should ignore a _id path', () => {
       const LevelOne = mongoose.model('LevelOne', {});
-
-      const lookuper = new Lookuper(LevelOne);
-      const pipeline = lookuper.lookup('_id');
+      const pipeline = lookuper.getPipeline(LevelOne, '_id');
 
       generator.modelNames.push('LevelOne');
 
@@ -188,8 +180,7 @@ describe('Lookuper', function() {
 
         await generator.generateDocument(LevelOne);
 
-        const lookuper = new Lookuper(LevelOne);
-        const pipeline = lookuper.lookup('levelTwo.someField');
+        const pipeline = lookuper.getPipeline(LevelOne, 'levelTwo.someField');
 
         const lookupedDocs = await LevelOne
           .aggregate()
@@ -209,16 +200,17 @@ describe('Lookuper', function() {
       it('should return pipeline for array path with embedded docs 2', async () => {
         const LevelOne = generator.generateModel('LevelOne',
           {
-            levelTwo: {em: [
-              {someField: generator.generateModel('LevelTwo')}
-            ]}
+            levelTwo: {
+              em: [
+                {someField: generator.generateModel('LevelTwo')}
+              ]
+            }
           }
         );
 
         await generator.generateDocument(LevelOne);
 
-        const lookuper = new Lookuper(LevelOne);
-        const pipeline = lookuper.lookup('levelTwo.em.someField');
+        const pipeline = lookuper.getPipeline(LevelOne, 'levelTwo.em.someField');
 
         const lookupedDocs = await LevelOne
           .aggregate()
@@ -244,8 +236,7 @@ describe('Lookuper', function() {
 
         await generator.generateDocument(LevelOne);
 
-        const lookuper = new Lookuper(LevelOne);
-        const pipeline = lookuper.lookup('levelTwo');
+        const pipeline = lookuper.getPipeline(LevelOne, 'levelTwo');
 
         const lookupedDocs = await LevelOne
           .aggregate()
@@ -262,19 +253,20 @@ describe('Lookuper', function() {
         }
       });
 
-      it.skip('should return pipeline for array path with ObjectIDs and additional reference', async () => {
+      it('should return pipeline for array path with ObjectIDs and additional reference', async () => {
         const LevelOne = generator.generateModel('LevelOne', {
           levelTwo: [
             generator.generateModel('LevelTwo',
-              generator.generateModel('LevelThree')
+              generator.generateModel('LevelThree',
+                generator.generateModel('LevelFour',
+                  generator.generateModel('LevelFive'))),
             )
           ]
         });
 
         await generator.generateDocument(LevelOne);
 
-        const lookuper = new Lookuper(LevelOne);
-        const pipeline = lookuper.lookup('levelTwo.LevelThreeReference');
+        const pipeline = lookuper.getPipeline(LevelOne, 'levelTwo.LevelThreeReference.LevelFourReference.LevelFiveReference');
 
         const lookupedDocs = await LevelOne
           .aggregate()
@@ -288,8 +280,40 @@ describe('Lookuper', function() {
         for (const embedded of lookupedDocs[0].levelTwo) {
           assert.equal(typeof embedded, 'object');
           assert.ok(embedded._id);
+
+          assert.equal(typeof embedded.LevelThreeReference, 'object');
+          assert.equal(typeof embedded.LevelThreeReference.LevelFourReference, 'object');
+          assert.equal(typeof embedded.LevelThreeReference.LevelFourReference.LevelFiveReference, 'object');
+          assert.ok(embedded.LevelThreeReference.LevelFourReference.LevelFiveReference._id);
         }
       });
+    });
+  });
+
+  describe('#getNearestReference', () => {
+    it('should return correct data', () => {
+      mongoose.model('LevelTwo', {field: {type: String}});
+
+      const levelOne = mongoose.model('LevelOne', {
+        embeddedField: {
+          embeddedArray: [{
+            fieldInArray: {
+              levelTwo: {type: ObjectId, ref: 'LevelTwo'}
+            }
+          }]
+        }
+      });
+
+      const nearestReferenst = lookuper.getNearestReferenceData(levelOne, 'embeddedField.embeddedArray.fieldInArray.levelTwo');
+
+      assert.equal(nearestReferenst.isArray, true);
+      assert.equal(nearestReferenst.isArrayOfDocuments, true);
+      assert.equal(nearestReferenst.arrayField, 'embeddedField.embeddedArray');
+      assert.equal(nearestReferenst.referenceCollectionName, 'leveltwos');
+      assert.equal(nearestReferenst.referencePath, 'embeddedField.embeddedArray.fieldInArray.levelTwo');
+
+      mongoose.deleteModel('LevelOne');
+      mongoose.deleteModel('LevelTwo');
     });
   });
 
@@ -305,8 +329,7 @@ describe('Lookuper', function() {
         .create({foo})
         .then(() => LevelOne.create({LevelTwoReference: foo}))
         .then(() => {
-          const lookuper = new Lookuper(LevelOne, {foreignField: 'foo'});
-          const pipeline = lookuper.lookup('LevelTwoReference');
+          const pipeline = lookuper.getPipeline(LevelOne, 'LevelTwoReference', {foreignField: 'foo'});
 
           return LevelOne
             .aggregate()
@@ -325,8 +348,7 @@ describe('Lookuper', function() {
       return generator.generateDocument(LevelOne)
         .then(() => LevelOne.create({}))
         .then(() => {
-          const lookuper = new Lookuper(LevelOne, {preserveNullAndEmptyArrays: false});
-          const pipeline = lookuper.lookup('LevelTwoReference');
+          const pipeline = lookuper.getPipeline(LevelOne, 'LevelTwoReference', {preserveNullAndEmptyArrays: false});
 
           return LevelOne
             .aggregate()
@@ -348,8 +370,7 @@ describe('Lookuper', function() {
       return generator.generateDocument(LevelOne)
         .then(() => LevelOne.create({}))
         .then(() => {
-          const lookuper = new Lookuper(LevelOne, {preserveNullAndEmptyArrays: true});
-          const pipeline = lookuper.lookup('LevelTwoReference');
+          const pipeline = lookuper.getPipeline(LevelOne, 'LevelTwoReference', {preserveNullAndEmptyArrays: true});
 
           return LevelOne
             .aggregate()
