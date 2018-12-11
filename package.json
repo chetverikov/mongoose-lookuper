@@ -11,6 +11,8 @@
     "url": "git+https://github.com/aggregion/mongoose-lookuper.git"
   },
   "keywords": [
+    "mongoose",
+    "mongodb",
     "lookup",
     "aggregate",
     "deep lookup"
