@@ -95,8 +95,13 @@ function getNearestReferenceData(model, path) {
       data.isArray = true;
       data.isArrayOfDocuments = true;
       data.arrayField = referencePath.join('.');
+
+      if (data.referencePath) {
+        referencePath.push(data.referencePath);
+      }
+
       data.referenceField = data.referencePath;
-      data.referencePath = [...referencePath, data.referencePath].join('.');
+      data.referencePath = referencePath.join('.');
     } else {
       const referenceModel = mongoose.model(schemaType.caster.options.ref);
       const referenceCollectionName = referenceModel.collection.collectionName;
@@ -189,7 +194,7 @@ function getPipeline(model, path, options = {}) {
         const referenceField = pipelinePath.replace(`${arrayField}.`, '');
 
         pipelines.push(getAddFieldsStage(arrayField, referenceField, fieldFoundDocs));
-        pipelines.push({$addFields: {[`tmp_${arrayField}`]: '$$REMOVE'}});
+        pipelines.push({$addFields: {[`tmp_${pipelinePath.split('.')[0]}`]: '$$REMOVE'}});
       }
     }
   }
