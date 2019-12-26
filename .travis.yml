@@ -1,0 +1,23 @@
+notifications:
+  webhooks:
+    on_success: always  # options: [always|never|change] default: always
+    on_failure: always  # options: [always|never|change] default: always
+    on_start: true     # default: false
+language: node_js
+sudo: false
+node_js:
+  - "8"
+  - "9"
+  - "10"
+  - "11"
+  - "12"
+
+before_script:
+  - npm install -g codeclimate-test-reporter
+
+script:
+  - npm run lint
+  - npm run travis
+
+after_script:
+  - codeclimate < ./coverage/lcov.info

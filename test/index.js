@@ -230,7 +230,7 @@ describe('Lookuper', function() {
       it('should return pipeline for array path with ObjectIDs', async () => {
         const LevelOne = generator.generateModel('LevelOneWithArray', {
           levelTwo: [
-            generator.generateModel('LevelTwo')
+            generator.generateModel('LevelTwo'),
           ]
         });
 

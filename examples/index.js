@@ -48,28 +48,36 @@ const stringFieldSchema = {type: String, default: faker.lorem.words};
 
     await LevelOneModel.deleteMany({});
 
-    await LevelOneModel.create({
-      embeddedObj: {
-        embeddedField: {
-          levelTwos: [
-            {
-              levelTwo: await LevelTwoModel.create({
-                levelThree: await LevelThreeModel.create({
-                  levelFour: await LevelFourModel.create({})
+    let count = 100;
+
+    while (count--) {
+      await LevelOneModel.create({
+        embeddedObj: {
+          embeddedField: {
+            levelTwos: [
+              {
+                levelTwo: await LevelTwoModel.create({
+                  levelThree: await LevelThreeModel.create({
+                    levelFour: await LevelFourModel.create({})
+                  })
                 })
-              })
-            },
-            {
-              levelTwo: await LevelTwoModel.create({
-                levelThree: await LevelThreeModel.create({
-                  levelFour: await LevelFourModel.create({})
+              },
+              {
+                levelTwo: await LevelTwoModel.create({
+                  levelThree: await LevelThreeModel.create({
+                    levelFour: await LevelFourModel.create({})
+                  })
                 })
-              })
-            }
-          ]
+              }
+            ]
+          }
         }
+      });
+
+      if (count % 1000 === 0) {
+        console.log(count);
       }
-    });
+    }
 
     const pipeline = lookuper.getPipeline(LevelOneModel, 'embeddedObj.embeddedField.levelTwos.levelTwo.levelThree.levelFour');
     const docs = await LevelOneModel.aggregate(pipeline); // docs with lookuped fields

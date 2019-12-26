@@ -1,7 +1,7 @@
 {
   "name": "mongoose-lookuper",
-  "version": "0.0.1",
-  "description": "Create an aggregate pipeline for deep lookup by path",
+  "version": "1.0.0",
+  "description": "Create an aggregate pipeline for deep lookup by specified path",
   "main": "index.js",
   "scripts": {
     "test": "npm test"
@@ -18,17 +18,25 @@
     "deep lookup"
   ],
   "author": "Maksim Chetverikov <ma.chetverikov@gmail.com>",
+  "contributors": [
+    {
+      "name": "Maksim Chetverikov",
+      "email": "ma.chetverikov@gmail.com"
+    }
+  ],
   "license": "MIT",
   "bugs": {
     "url": "https://github.com/aggregion/mongoose-lookuper/issues"
   },
   "homepage": "https://github.com/aggregion/mongoose-lookuper#readme",
   "optionalDependencies": {
-    "mongoose": "^5.3.13"
+    "mongoose": "^5.8.3"
   },
   "devDependencies": {
+    "codecov": "^3.0.0",
+    "istanbul": "^1.1.0-alpha.1",
     "faker": "^4.1.0",
     "lodash.get": "^4.4.2",
-    "mocha": "^5.2.0"
+    "mocha": "^6.2.2"
   }
 }

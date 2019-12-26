@@ -100,13 +100,14 @@ function getNearestReferenceData(model, path) {
         referencePath.push(data.referencePath);
       }
 
-      data.referenceField = data.referencePath;
+      data.referenceField = data.referencePath || referencePath.join('.');
       data.referencePath = referencePath.join('.');
     } else {
       const referenceModel = mongoose.model(schemaType.caster.options.ref);
       const referenceCollectionName = referenceModel.collection.collectionName;
 
       data.isArray = true;
+      data.arrayField = referencePath.join('.');
       data.referencePath = referencePath.join('.');
       data.referenceCollectionName = referenceCollectionName;
       data.referenceModel = referenceModel;
@@ -201,7 +202,7 @@ function getPipeline(model, path, options = {}) {
 
   if (path !== nearestReference.referencePath) {
     const parentArrayReference = nearestReference.isArray && !options.parentArrayReference ?
-      nearestReference.referencePath
+      (nearestReference.arrayField || nearestReference.referenceField)
       :
       options.parentArrayReference;
     const deepPath = path.replace(`${nearestReference.referencePath}.`, '');
@@ -254,13 +255,17 @@ function getAddFieldsStage(baseField, referenceField, fieldFoundDocs) {
 
   if (referenceField.includes('.')) {
     const parts = referenceField.split('.');
+    let pathForMerge = ['$$this'];
     let lastObject = mergeObject;
 
     while (parts.length > 1) {
       const part = parts.shift();
+      pathForMerge.push(part);
 
-      lastObject[part] = {};
-      lastObject = lastObject[part];
+      lastObject[part] = {
+        $mergeObjects: [pathForMerge.join('.'), {}]
+      };
+      lastObject = lastObject[part].$mergeObjects[1];
     }
 
     referenceField = parts.shift();
@@ -308,11 +313,11 @@ function isObjectIdPath(schemaType) {
 }
 
 function isArrayPath(schemaType) {
-  return schemaType && (schemaType.$isMongooseArray || isArrayOfDocumentsPath(schemaType));
+  return schemaType && schemaType.$isMongooseArray;
 }
 
 function isArrayOfDocumentsPath(schemaType) {
-  return schemaType && schemaType.$isMongooseDocumentArray;
+  return schemaType && (schemaType.$isMongooseDocumentArray);
 }
 
 function isReferencePath(schemaType) {
