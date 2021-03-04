@@ -1,6 +1,6 @@
 # Mongoose lookuper
 
-Mongoose plugin that generate aggregate pipeline for deep lookup by specified fields
+Mongoose plugin that generates an aggregate pipeline for deep search on specified fields
 
 ## Install
 
